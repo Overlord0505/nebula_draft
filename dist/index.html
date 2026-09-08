@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10233f" />
+    <meta name="description" content="Plan engineering-hour maintenance, detect clashes and automatically find conflict-free alternatives." />
+    <title>TrackFlow Maintenance Planner</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <a class="brand" href="#" aria-label="TrackFlow home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+          <span><strong>TrackFlow</strong><small>Maintenance planner</small></span>
+        </a>
+
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-nav="plan">
+            <span class="nav-icon" aria-hidden="true">▦</span><span>Schedule</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="calendar">
+            <span class="nav-icon" aria-hidden="true">□</span><span>Weekly calendar</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="requests">
+            <span class="nav-icon" aria-hidden="true">≡</span><span>All requests</span><span class="nav-badge" id="requestCountBadge">12</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="staff">
+            <span class="nav-icon" aria-hidden="true">◎</span><span>Staff &amp; skills</span><span class="nav-badge" id="staffCountBadge">5</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-guide">
+          <strong>How conflicts work</strong>
+          <p>The planner checks overlapping sectors and engineer assignments.</p>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="system-status"><span class="status-dot"></span><span><strong>System online</strong><small>Schedule is synced</small></span></div>
+          <div class="profile"><span class="avatar">JL</span><span><strong>Jamie Lee</strong><small>Lead scheduler</small></span></div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="title-group">
+            <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
+            <div><p class="eyebrow" id="pageEyebrow">Overnight engineering hours</p><h1 id="pageTitle">Maintenance schedule</h1></div>
+          </div>
+          <div class="header-actions">
+            <button class="button secondary schedule-action" id="exportBtn" type="button">Export CSV</button>
+            <button class="button primary schedule-action" id="newRequestBtn" type="button"><span aria-hidden="true">＋</span> Add request</button>
+            <button class="button primary hidden" id="addStaffBtn" type="button"><span aria-hidden="true">＋</span> Add staff</button>
+          </div>
+        </header>
+
+        <div class="page-content">
+          <div id="schedulePage">
+          <section class="date-row" aria-label="Selected engineering night">
+            <div class="date-controls">
+              <button class="icon-button" id="prevDate" type="button" aria-label="Previous day">‹</button>
+              <button class="date-button" id="dateButton" type="button">
+                <span id="displayDate">Tue, 8 Sep 2026</span><small>Engineering window: 00:00–05:00</small>
+              </button>
+              <button class="icon-button" id="nextDate" type="button" aria-label="Next day">›</button>
+            </div>
+            <p class="updated-text">Last checked just now</p>
+          </section>
+
+          <section class="summary-grid" aria-label="Schedule summary">
+            <article class="summary-card">
+              <span class="summary-icon blue" aria-hidden="true">▤</span>
+              <div><small>Maintenance requests</small><strong id="totalCount">6 requests</strong><p>Planned for this engineering night</p></div>
+            </article>
+            <article class="summary-card alert-card">
+              <span class="summary-icon red" aria-hidden="true">!</span>
+              <div><small>Active conflicts</small><strong id="conflictCount">3 conflicts</strong><p>Require a scheduling decision</p></div>
+            </article>
+            <article class="summary-card">
+              <span class="summary-icon green" aria-hidden="true">✓</span>
+              <div><small>Track coverage</small><strong id="coverageCount">4 sectors</strong><p>Included in the current plan</p></div>
+            </article>
+            <article class="summary-card readiness-card">
+              <div class="readiness-copy"><small>Plan readiness</small><strong id="readinessValue">50%</strong></div>
+              <div class="progress-track" aria-hidden="true"><i id="readinessBar"></i></div>
+              <p>Requests without an active conflict</p>
+            </article>
+          </section>
+
+          <section class="schedule-notice" id="scheduleNotice" aria-live="polite">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div><strong id="scheduleNoticeTitle">Scheduling action required</strong><p id="scheduleNoticeText">Review the conflict queue or run the auto-scheduler to find safe alternative times.</p></div>
+            <button class="notice-action" type="button" id="noticeAutoBtn">Resolve automatically</button>
+          </section>
+
+          <section class="workspace">
+            <div class="planner-card">
+              <div class="planner-toolbar">
+                <div>
+                  <p class="section-label">Track occupation timeline</p>
+                  <h2>Engineering work plan</h2>
+                </div>
+                <div class="toolbar-group">
+                  <label class="select-wrap"><span class="sr-only">Filter by sector</span>
+                    <select id="sectorFilter">
+                      <option value="all">All track sectors</option>
+                      <option value="NS-04">NS-04 · North–South</option>
+                      <option value="EW-12">EW-12 · East–West</option>
+                      <option value="CC-07">CC-07 · Circle</option>
+                      <option value="DT-09">DT-09 · Downtown</option>
+                    </select>
+                  </label>
+                  <div class="segmented" role="group" aria-label="Schedule view">
+                    <button class="active" type="button" data-view="timeline">Timeline</button>
+                    <button type="button" data-view="list">List</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-wrap" id="timelineView">
+                <div class="timeline-head"><div class="sector-heading">Track sector</div><div class="time-heading" id="timeHeading"></div></div>
+                <div id="timelineBody"></div>
+                <div class="legend" aria-label="Priority legend">
+                  <strong>Priority:</strong><span><i class="legend-dot critical"></i>Critical</span><span><i class="legend-dot high"></i>High</span><span><i class="legend-dot standard"></i>Standard</span><span><i class="legend-line"></i>Conflict</span>
+                </div>
+              </div>
+
+              <div class="request-table-wrap hidden" id="listView">
+                <table>
+                  <thead><tr><th>Request</th><th>Sector</th><th>Time</th><th>Lead engineer</th><th>Priority</th><th>Status</th></tr></thead>
+                  <tbody id="requestTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <aside class="conflict-panel" aria-labelledby="conflictsTitle">
+              <div class="conflict-head">
+                <div><p class="section-label danger-text">Needs attention</p><h2 id="conflictsTitle">Conflict queue</h2><p>Each card explains the clash and the safest available alternative.</p></div>
+                <span class="count-pill" id="panelConflictCount">3</span>
+              </div>
+              <div class="conflict-list" id="conflictList"></div>
+              <div class="resolved-state hidden" id="resolvedState">
+                <div class="resolved-check">✓</div><h3>Plan is conflict-free</h3><p>Every request fits the track window and engineer availability.</p>
+              </div>
+              <div class="auto-schedule">
+                <div><strong>Automatically find safer times</strong><p>Only conflicting requests will be moved.</p></div>
+                <button class="button auto-button" id="autoScheduleBtn" type="button"><span>Run auto-scheduler</span><i aria-hidden="true">→</i></button>
+              </div>
+            </aside>
+          </section>
+          </div>
+
+          <section class="calendar-page hidden" id="calendarPage" aria-labelledby="weekCalendarTitle">
+            <div class="week-toolbar">
+              <div>
+                <p class="section-label">Seven-night overview</p>
+                <h2 id="weekCalendarTitle">Weekly engineering calendar</h2>
+                <p>See every planned job, engineer assignment and conflict across the week.</p>
+              </div>
+              <div class="week-controls" aria-label="Change calendar week">
+                <button class="icon-button" id="prevWeekBtn" type="button" aria-label="Previous week">‹</button>
+                <button class="button secondary" id="thisWeekBtn" type="button">This week</button>
+                <button class="icon-button" id="nextWeekBtn" type="button" aria-label="Next week">›</button>
+              </div>
+            </div>
+
+            <div class="week-heading">
+              <div><small>Selected week</small><strong id="weekRangeLabel">7–13 Sep 2026</strong></div>
+              <div class="calendar-legend"><span><i class="calendar-key clear"></i>Clear</span><span><i class="calendar-key conflict"></i>Conflict</span></div>
+            </div>
+
+            <section class="week-summary-grid" aria-label="Weekly schedule summary">
+              <article class="week-summary-card"><span class="summary-icon blue" aria-hidden="true">▤</span><div><small>Jobs this week</small><strong id="weekJobCount">0</strong><p>Across all engineering nights</p></div></article>
+              <article class="week-summary-card"><span class="summary-icon red" aria-hidden="true">!</span><div><small>Weekly conflicts</small><strong id="weekConflictCount">0</strong><p>Clashes requiring attention</p></div></article>
+              <article class="week-summary-card"><span class="summary-icon green" aria-hidden="true">✓</span><div><small>Active sectors</small><strong id="weekSectorCount">0</strong><p>Track areas with planned work</p></div></article>
+            </section>
+
+            <section class="weekly-calendar-card">
+              <div class="week-grid" id="weekGrid" aria-label="Weekly maintenance jobs"></div>
+            </section>
+          </section>
+
+          <section class="staff-page hidden" id="staffPage" aria-labelledby="staffRosterTitle">
+            <div class="staff-summary-grid" aria-label="Staff summary">
+              <article class="staff-summary-card"><span class="staff-summary-icon">◎</span><div><small>Total maintenance staff</small><strong id="totalStaffCount">5</strong><p>People in the roster</p></div></article>
+              <article class="staff-summary-card"><span class="staff-summary-icon available">✓</span><div><small>Available tonight</small><strong id="availableStaffCount">4</strong><p>Ready for assignment</p></div></article>
+              <article class="staff-summary-card"><span class="staff-summary-icon skills">▦</span><div><small>Specialisations covered</small><strong id="staffSkillsCount">5</strong><p>Across MRT maintenance</p></div></article>
+            </div>
+
+            <div class="staff-layout">
+              <section class="staff-roster-card">
+                <div class="staff-roster-head">
+                  <div><p class="section-label">People and capabilities</p><h2 id="staffRosterTitle">Maintenance staff roster</h2><p>Manage who is available and what work each person can perform.</p></div>
+                  <label class="staff-filter"><span class="sr-only">Filter by specialisation</span><select id="staffSpecialisationFilter"><option value="all">All specialisations</option></select></label>
+                </div>
+                <div class="staff-list" id="staffList"></div>
+                <div class="empty-staff hidden" id="emptyStaff"><strong>No staff found</strong><p>Add a staff member or change the specialisation filter.</p></div>
+              </section>
+
+              <aside class="specialisation-guide">
+                <div class="guide-head"><p class="section-label">MRT work guide</p><h2>Specialisations</h2><p>These categories describe the main maintenance responsibilities in this prototype.</p></div>
+                <div class="guide-list" id="specialisationGuide"></div>
+              </aside>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="requestModal" role="presentation">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-head">
+          <div><p class="section-label">Maintenance request</p><h2 id="modalTitle">Add work to the plan</h2><p>Enter the required track, time and lead engineer.</p></div>
+          <button class="close-button" id="closeModalBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <form id="requestForm">
+          <div class="form-grid">
+            <label class="field wide"><span>Work title</span><input name="title" required placeholder="e.g. Rail ultrasonic testing" /></label>
+            <label class="field"><span>Engineering night</span><input id="requestDateInput" name="date" type="date" required /></label>
+            <label class="field"><span>Track sector</span><select name="sector" required><option value="NS-04">NS-04 · North–South</option><option value="EW-12">EW-12 · East–West</option><option value="CC-07">CC-07 · Circle</option><option value="DT-09">DT-09 · Downtown</option></select></label>
+            <label class="field"><span>Work type</span><select name="type" required><option>Track</option><option>Signals</option><option>Power</option><option>Civil</option><option>Inspection</option></select></label>
+            <label class="field"><span>Start time</span><select name="start" required><option value="0">00:00</option><option value="0.5">00:30</option><option value="1">01:00</option><option value="1.5">01:30</option><option value="2">02:00</option><option value="2.5">02:30</option><option value="3">03:00</option><option value="3.5">03:30</option><option value="4">04:00</option></select></label>
+            <label class="field"><span>Duration</span><select name="duration" required><option value="1">1 hour</option><option value="1.5">1.5 hours</option><option value="2">2 hours</option></select></label>
+            <label class="field"><span>Lead engineer</span><select name="engineer" id="requestEngineerSelect" required></select></label>
+            <label class="field"><span>Priority</span><select name="priority" required><option value="standard">Standard</option><option value="high">High</option><option value="critical">Critical</option></select></label>
+          </div>
+          <div class="form-note"><strong>Automatic check:</strong> The planner will flag track-sector and engineer conflicts as soon as this request is added.</div>
+          <div class="modal-actions"><button class="button secondary" id="cancelModalBtn" type="button">Cancel</button><button class="button primary" type="submit">Add request</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="manualReviewModal" role="presentation">
+      <section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="manualReviewTitle">
+        <div class="modal-head">
+          <div><p class="section-label danger-text">Conflict decision</p><h2 id="manualReviewTitle">Manual review</h2><p>Adjust one job and the planner will check the decision before saving it.</p></div>
+          <button class="close-button" id="closeManualBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <form id="manualReviewForm">
+          <div class="review-summary" id="manualConflictSummary"></div>
+          <div class="review-instruction"><strong>Choose the job to adjust</strong><span>The other job will keep its existing assignment.</span></div>
+          <div class="form-grid">
+            <label class="field wide"><span>Job to adjust</span><select id="manualTargetSelect" required></select></label>
+            <label class="field"><span>New start time</span><select id="manualStartSelect"><option value="keep">Keep current time</option></select></label>
+            <label class="field"><span>Lead engineer</span><select id="manualEngineerSelect"><option value="keep">Keep current engineer</option></select></label>
+          </div>
+          <div class="current-assignment" id="manualCurrentDetails"></div>
+          <div class="manual-validation hidden" id="manualValidation" role="alert"></div>
+          <div class="modal-actions review-actions">
+            <button class="button remove-button" id="removeManualBtn" type="button">Remove job from tonight</button>
+            <span class="action-spacer"></span>
+            <button class="button secondary" id="cancelManualBtn" type="button">Cancel</button>
+            <button class="button primary" type="submit">Apply decision</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="staffModal" role="presentation">
+      <section class="modal staff-modal" role="dialog" aria-modal="true" aria-labelledby="staffModalTitle">
+        <div class="modal-head">
+          <div><p class="section-label">Staff record</p><h2 id="staffModalTitle">Add staff member</h2><p>Record the person's main MRT maintenance role and capabilities.</p></div>
+          <button class="close-button" id="closeStaffModalBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <form id="staffForm">
+          <div class="form-grid">
+            <label class="field wide"><span>Full name</span><input id="staffNameInput" name="staffName" required placeholder="e.g. Nur Aisyah" /></label>
+            <label class="field"><span>Primary specialisation</span><select id="staffSpecialisationSelect" name="staffSpecialisation" required></select></label>
+            <label class="field"><span>Availability</span><select id="staffAvailabilitySelect" name="staffAvailability" required><option value="available">Available tonight</option><option value="assigned">Already assigned</option><option value="unavailable">Unavailable</option></select></label>
+          </div>
+          <fieldset class="capability-fieldset">
+            <legend>What this staff member can do</legend>
+            <p>Select all relevant maintenance capabilities.</p>
+            <div class="capability-options" id="staffCapabilityOptions"></div>
+          </fieldset>
+          <div class="manual-validation hidden" id="staffValidation" role="alert"></div>
+          <div class="modal-actions"><button class="button secondary" id="cancelStaffModalBtn" type="button">Cancel</button><button class="button primary" type="submit">Save staff member</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
