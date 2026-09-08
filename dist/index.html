@@ -33,7 +33,7 @@
 
         <div class="sidebar-guide">
           <strong>How conflicts work</strong>
-          <p>The planner checks overlapping sectors and engineer assignments.</p>
+          <p>The planner checks overlapping sectors, engineers and the required 30-minute safety interval.</p>
         </div>
 
         <div class="sidebar-footer">
@@ -225,7 +225,7 @@
             <label class="field"><span>Lead engineer</span><select name="engineer" id="requestEngineerSelect" required></select></label>
             <label class="field"><span>Priority</span><select name="priority" required><option value="standard">Standard</option><option value="high">High</option><option value="critical">Critical</option></select></label>
           </div>
-          <div class="form-note"><strong>Automatic check:</strong> The planner will flag track-sector and engineer conflicts as soon as this request is added.</div>
+          <div class="form-note"><strong>Automatic check:</strong> The planner checks track sectors, engineer availability and a 30-minute safety interval between related jobs.</div>
           <div class="modal-actions"><button class="button secondary" id="cancelModalBtn" type="button">Cancel</button><button class="button primary" type="submit">Add request</button></div>
         </form>
       </section>
@@ -239,11 +239,15 @@
         </div>
         <form id="manualReviewForm">
           <div class="review-summary" id="manualConflictSummary"></div>
-          <div class="review-instruction"><strong>Choose the job to adjust</strong><span>The other job will keep its existing assignment.</span></div>
+          <section class="smart-recommendations" aria-labelledby="smartRecommendationTitle">
+            <div class="recommendation-head"><div><strong id="smartRecommendationTitle">Recommended resolutions</strong><span>Ranked by the least disruption to time, priority and staffing.</span></div><span class="smart-badge">Smart review</span></div>
+            <div class="recommendation-list" id="manualRecommendationList"></div>
+          </section>
+          <div class="review-instruction"><strong>Or make a custom decision</strong><span>The other job will keep its existing assignment.</span></div>
           <div class="form-grid">
             <label class="field wide"><span>Job to adjust</span><select id="manualTargetSelect" required></select></label>
             <label class="field"><span>New start time</span><select id="manualStartSelect"><option value="keep">Keep current time</option></select></label>
-            <label class="field"><span>Lead engineer</span><select id="manualEngineerSelect"><option value="keep">Keep current engineer</option></select></label>
+            <label class="field"><span>Alternative engineer</span><select id="manualEngineerSelect"><option value="keep">Keep current engineer</option></select><small class="field-hint">Choose any available engineer. Specialisation does not restrict reassignment.</small></label>
           </div>
           <div class="current-assignment" id="manualCurrentDetails"></div>
           <div class="manual-validation hidden" id="manualValidation" role="alert"></div>
