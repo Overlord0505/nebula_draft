@@ -5,6 +5,8 @@ const sectors = [
   { code: "DT-09", name: "Downtown line", color: "#3978f6" }
 ];
 
+const minimumSafetyGap = 0.5;
+
 const defaultRequests = [
   { id: "TRK-279", date: "2026-09-07", title: "Tunnel lighting inspection", sector: "DT-09", start: 1, end: 2.5, engineer: "Priya Nair", type: "Civil", priority: "standard" },
   { id: "TRK-284", date: "2026-09-08", title: "Rail grinding", sector: "NS-04", start: .5, end: 2.5, engineer: "Aaron Lim", type: "Track", priority: "critical" },
@@ -116,17 +118,26 @@ function overlaps(a, b) {
   return a.start < b.end && b.start < a.end;
 }
 
+function violatesSafetyGap(a, b) {
+  return a.start < b.end + minimumSafetyGap && b.start < a.end + minimumSafetyGap;
+}
+
 function getConflicts(sourceRequests = getCurrentRequests()) {
   const conflicts = [];
   for (let i = 0; i < sourceRequests.length; i++) {
     for (let j = i + 1; j < sourceRequests.length; j++) {
       const a = sourceRequests[i];
       const b = sourceRequests[j];
-      if (!overlaps(a, b)) continue;
-      if (a.sector === b.sector) {
-        conflicts.push({ key: `${a.id}-${b.id}-sector`, a, b, type: "sector", reason: `${a.sector} is occupied by both requests.` });
-      } else if (a.engineer === b.engineer) {
-        conflicts.push({ key: `${a.id}-${b.id}-engineer`, a, b, type: "engineer", reason: `${a.engineer} is assigned to both jobs.` });
+      const sameSector = a.sector === b.sector;
+      const sameEngineer = a.engineer === b.engineer;
+      if ((!sameSector && !sameEngineer) || !violatesSafetyGap(a, b)) continue;
+      const kind = overlaps(a, b) ? "overlap" : "buffer";
+      if (sameSector) {
+        const reason = kind === "overlap" ? `${a.sector} is occupied by both requests.` : `${a.sector} has less than the required 30-minute safety interval between jobs.`;
+        conflicts.push({ key: `${a.id}-${b.id}-sector`, a, b, type: "sector", kind, reason });
+      } else if (sameEngineer) {
+        const reason = kind === "overlap" ? `${a.engineer} is assigned to both jobs.` : `${a.engineer} has less than 30 minutes to move between the two jobs.`;
+        conflicts.push({ key: `${a.id}-${b.id}-engineer`, a, b, type: "engineer", kind, reason });
       }
     }
   }
@@ -154,11 +165,11 @@ function priorityColor(priority) {
 function candidateFor(target) {
   const duration = target.end - target.start;
   const slots = [];
-  for (let start = 0; start + duration <= 5; start += .25) slots.push(start);
+  for (let start = 0; start + duration <= 5; start += .5) slots.push(start);
   const sorted = slots.sort((a, b) => Math.abs(a - target.start) - Math.abs(b - target.start));
   for (const start of sorted) {
     const trial = { ...target, start, end: start + duration };
-    const blocked = requests.some(r => r.id !== target.id && r.date === target.date && overlaps(trial, r) && (r.sector === trial.sector || r.engineer === trial.engineer));
+    const blocked = requests.some(r => r.id !== target.id && r.date === target.date && violatesSafetyGap(trial, r) && (r.sector === trial.sector || r.engineer === trial.engineer));
     if (!blocked) return { start, end: start + duration };
   }
   return null;
@@ -230,7 +241,7 @@ function renderConflicts() {
       const candidate = move?.candidate;
       const suggestionText = candidate ? `${formatTime(candidate.start)}–${formatTime(candidate.end)} · ${target.sector}` : "No safe slot available";
       return `<article class="conflict-card" style="animation-delay:${index * 40}ms">
-        <div class="conflict-card-top"><h3>${conflict.a.id} × ${conflict.b.id}</h3><span class="severity">${conflict.type === "sector" ? "Track clash" : "Resource clash"}</span></div>
+        <div class="conflict-card-top"><h3>${conflict.a.id} × ${conflict.b.id}</h3><span class="severity">${conflict.kind === "buffer" ? "30-min gap" : conflict.type === "sector" ? "Track clash" : "Resource clash"}</span></div>
         <div class="conflict-reason"><b>!</b><span>${conflict.reason}</span></div>
         <div class="suggestion">
           <span>${target ? `Move ${target.id}` : "Manual decision needed"}<strong>${suggestionText}</strong></span>
@@ -472,6 +483,90 @@ function applySuggestion(id, start, quiet = false) {
   if (!quiet) toast(`${id} moved to ${formatRange(item)}. Conflict rechecked.`, "success");
 }
 
+function conflictsForAssignment(item, start, engineer) {
+  const duration = item.end - item.start;
+  const trial = { ...item, start, end: start + duration, engineer };
+  const otherJobs = requests.filter(request => request.date === item.date && request.id !== item.id);
+  return getConflicts([...otherJobs, trial]).filter(conflict => conflict.a.id === item.id || conflict.b.id === item.id);
+}
+
+function buildManualRecommendations(conflict) {
+  const priorityWeight = { critical: 12, high: 7, standard: 3, routine: 3 };
+  const eligibleEngineers = staff.filter(person => person.availability !== "unavailable").map(person => person.name);
+  const options = [];
+
+  [conflict.a, conflict.b].forEach(item => {
+    const duration = item.end - item.start;
+    const engineers = [...new Set([item.engineer, ...eligibleEngineers])];
+    const startOptions = [item.start];
+    for (let start = 0; start + duration <= 5; start += .5) if (!startOptions.includes(start)) startOptions.push(start);
+    for (const start of startOptions) {
+      engineers.forEach(engineer => {
+        const timeChanged = start !== item.start;
+        const engineerChanged = engineer !== item.engineer;
+        if (!timeChanged && !engineerChanged) return;
+        if (conflictsForAssignment(item, start, engineer).length) return;
+
+        const shiftMinutes = Math.round(Math.abs(start - item.start) * 60);
+        const method = timeChanged && engineerChanged ? "Time + engineer" : timeChanged ? "Time change" : "Engineer change";
+        const score = (priorityWeight[item.priority] || 3) + shiftMinutes / 6 + (engineerChanged ? 4 : 0) + (timeChanged && engineerChanged ? 3 : 0);
+        const impact = !timeChanged
+          ? `Keeps ${formatRange(item)} and assigns ${engineer}`
+          : !engineerChanged
+            ? `Keeps ${item.engineer} and shifts the job by ${shiftMinutes} minutes`
+            : `Shifts by ${shiftMinutes} minutes and assigns ${engineer}`;
+        options.push({ targetId: item.id, start, engineer, method, score, impact, range: `${formatTime(start)}–${formatTime(start + duration)}` });
+      });
+    }
+  });
+
+  options.sort((a, b) => a.score - b.score || a.targetId.localeCompare(b.targetId));
+  const selected = [];
+  for (const option of options) {
+    if (!selected.some(chosen => chosen.method === option.method)) selected.push(option);
+    if (selected.length === 3) break;
+  }
+  for (const option of options) {
+    if (selected.length === 3) break;
+    if (!selected.includes(option)) selected.push(option);
+  }
+  return selected;
+}
+
+function renderManualRecommendations(conflict) {
+  const options = buildManualRecommendations(conflict);
+  const list = $("#manualRecommendationList");
+  if (!options.length) {
+    list.innerHTML = '<div class="no-recommendation"><strong>No safe option fits this engineering window.</strong><span>Move one job to another night using the weekly calendar.</span></div>';
+    return;
+  }
+
+  list.innerHTML = options.map((option, index) => `<article class="recommendation-option ${index === 0 ? "best" : ""}">
+    <div class="recommendation-copy"><span class="recommendation-rank">${index === 0 ? "Best option" : `Option ${index + 1}`}</span><strong>${option.method}: ${option.targetId}</strong><small>${option.range} · ${escapeHtml(option.engineer)}</small><p>${escapeHtml(option.impact)}</p></div>
+    <button class="recommendation-apply" type="button" data-rec-target="${option.targetId}" data-rec-start="${option.start}" data-rec-engineer="${escapeHtml(option.engineer)}">Apply option</button>
+  </article>`).join("");
+  $$(".recommendation-apply").forEach(button => button.addEventListener("click", () => applyRecommendedResolution(button.dataset.recTarget, Number(button.dataset.recStart), button.dataset.recEngineer)));
+}
+
+function applyRecommendedResolution(targetId, start, engineer) {
+  const item = requests.find(request => request.id === targetId);
+  if (!item) return;
+  const duration = item.end - item.start;
+  if (conflictsForAssignment(item, start, engineer).length) {
+    showManualValidation("This option is no longer conflict-free. Refresh the review and choose another recommendation.");
+    return;
+  }
+  item.start = start;
+  item.end = start + duration;
+  item.engineer = engineer;
+  persistState();
+  closeManualReview();
+  renderAll();
+  const remainingCount = getConflicts().length;
+  const nextStep = remainingCount ? ` ${remainingCount} conflict${remainingCount === 1 ? "" : "s"} remain in the queue.` : " The engineering night is now conflict-free.";
+  toast(`${item.id} optimised to ${formatRange(item)} with ${item.engineer}.${nextStep}`, "success");
+}
+
 function openManualReview(conflictKey) {
   const conflict = getConflicts().find(item => item.key === conflictKey);
   if (!conflict) {
@@ -481,9 +576,11 @@ function openManualReview(conflictKey) {
 
   activeManualConflictKey = conflictKey;
   const move = findMoveForConflict(conflict);
-  const overlapStart = formatTime(Math.max(conflict.a.start, conflict.b.start));
-  const overlapEnd = formatTime(Math.min(conflict.a.end, conflict.b.end));
-  $("#manualConflictSummary").innerHTML = `<strong>${conflict.a.id} × ${conflict.b.id}</strong><p>${conflict.reason} Their current windows overlap between ${overlapStart} and ${overlapEnd}.</p>`;
+  const timingDetail = conflict.kind === "overlap"
+    ? `Their current windows overlap between ${formatTime(Math.max(conflict.a.start, conflict.b.start))} and ${formatTime(Math.min(conflict.a.end, conflict.b.end))}.`
+    : "Leave at least 30 minutes between the end of one job and the start of the other.";
+  $("#manualConflictSummary").innerHTML = `<strong>${conflict.a.id} × ${conflict.b.id}</strong><p>${conflict.reason} ${timingDetail}</p>`;
+  renderManualRecommendations(conflict);
   $("#manualTargetSelect").innerHTML = [conflict.a, conflict.b].map(item => `<option value="${item.id}">${item.id} · ${item.title}</option>`).join("");
   $("#manualTargetSelect").value = move?.target.id || conflict.b.id;
   updateManualReviewFields();
@@ -498,12 +595,13 @@ function updateManualReviewFields() {
 
   const duration = item.end - item.start;
   const timeOptions = ['<option value="keep">Keep current time</option>'];
-  for (let start = 0; start + duration <= 5; start += .25) {
+  for (let start = 0; start + duration <= 5; start += .5) {
     if (start !== item.start) timeOptions.push(`<option value="${start}">${formatTime(start)}–${formatTime(start + duration)}</option>`);
   }
   $("#manualStartSelect").innerHTML = timeOptions.join("");
+  // Specialisation is advisory during manual review: any rostered engineer who is not unavailable may be selected.
   const availableEngineers = staff.filter(person => person.availability !== "unavailable" && person.name !== item.engineer);
-  $("#manualEngineerSelect").innerHTML = ['<option value="keep">Keep current engineer</option>', ...availableEngineers.map(person => `<option value="${person.name}">${person.name} · ${person.specialisation}</option>`)].join("");
+  $("#manualEngineerSelect").innerHTML = ['<option value="keep">Keep current engineer</option>', ...availableEngineers.map(person => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)} · ${person.availability === "available" ? "Available" : "Assigned elsewhere"}</option>`)].join("");
   $("#manualCurrentDetails").innerHTML = `<strong>Current assignment:</strong> ${item.sector} · ${formatRange(item)} · ${item.engineer} · ${item.priority} priority`;
   $("#removeManualBtn").textContent = `Remove ${item.id} from tonight`;
   clearManualValidation();
@@ -519,6 +617,22 @@ function showManualValidation(message, success = false) {
 function clearManualValidation() {
   $("#manualValidation").classList.add("hidden");
   $("#manualValidation").classList.remove("success");
+}
+
+function previewManualDecision() {
+  const item = requests.find(request => request.id === $("#manualTargetSelect").value);
+  if (!item) return;
+  const selectedStart = $("#manualStartSelect").value;
+  const selectedEngineer = $("#manualEngineerSelect").value;
+  if (selectedStart === "keep" && selectedEngineer === "keep") {
+    clearManualValidation();
+    return;
+  }
+  const start = selectedStart === "keep" ? item.start : Number(selectedStart);
+  const engineer = selectedEngineer === "keep" ? item.engineer : selectedEngineer;
+  const remaining = conflictsForAssignment(item, start, engineer);
+  if (remaining.length) showManualValidation(`Still conflicting: ${remaining[0].reason}`);
+  else showManualValidation(`Conflict-free preview: ${formatTime(start)}–${formatTime(start + item.end - item.start)} with ${engineer}.`, true);
 }
 
 function closeManualReview() {
@@ -688,8 +802,8 @@ $("#requestModal").addEventListener("click", event => { if (event.target === $("
 $("#closeManualBtn").addEventListener("click", closeManualReview);
 $("#cancelManualBtn").addEventListener("click", closeManualReview);
 $("#manualTargetSelect").addEventListener("change", updateManualReviewFields);
-$("#manualStartSelect").addEventListener("change", clearManualValidation);
-$("#manualEngineerSelect").addEventListener("change", clearManualValidation);
+$("#manualStartSelect").addEventListener("change", previewManualDecision);
+$("#manualEngineerSelect").addEventListener("change", previewManualDecision);
 $("#manualReviewForm").addEventListener("submit", applyManualDecision);
 $("#removeManualBtn").addEventListener("click", removeManualRequest);
 $("#manualReviewModal").addEventListener("click", event => { if (event.target === $("#manualReviewModal")) closeManualReview(); });
