@@ -54,6 +54,7 @@ let view = "timeline";
 let activeFilter = "all";
 let activeManualConflictKey = null;
 let activeStaffId = null;
+let activeRequestActionId = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -212,7 +213,7 @@ function renderTimeline() {
     }).join("");
     return `<div class="timeline-row"><div class="sector-label"><span class="sector-code"><i style="--sector-color:${sector.color}"></i>${sector.code}</span><small class="sector-name">${sector.name}</small></div><div class="track-lane">${blocks}</div></div>`;
   }).join("");
-  $$(".work-block").forEach(button => button.addEventListener("click", () => showRequestToast(button.dataset.requestId)));
+  $$(".work-block").forEach(button => button.addEventListener("click", () => openRequestAction(button.dataset.requestId)));
 }
 
 function renderList() {
@@ -222,7 +223,10 @@ function renderList() {
   $("#requestTableBody").innerHTML = filtered.map(item => `<tr>
     <td>${item.title}<span class="table-id">${item.id} · ${item.type}</span></td><td>${item.sector}</td><td>${formatRange(item)}</td><td>${item.engineer}</td>
     <td><span class="priority-chip ${item.priority}">${item.priority}</span></td><td><span class="status-chip ${conflictIds.has(item.id) ? "conflict" : "clear"}">${conflictIds.has(item.id) ? "Conflict" : "Clear"}</span></td>
+    <td><div class="request-table-actions"><button class="request-done-action" type="button" data-done-id="${item.id}" aria-label="Mark ${item.id} as done">Done</button><button class="request-cancel-action" type="button" data-cancel-id="${item.id}" aria-label="Cancel ${item.id}">Cancel</button></div></td>
   </tr>`).join("");
+  $$('[data-done-id]').forEach(button => button.addEventListener("click", () => removeRequest(button.dataset.doneId, "completed")));
+  $$('[data-cancel-id]').forEach(button => button.addEventListener("click", () => removeRequest(button.dataset.cancelId, "cancelled")));
 }
 
 function renderConflicts() {
@@ -713,12 +717,36 @@ function runAutoSchedule() {
   }, 900);
 }
 
-function showRequestToast(id) {
-  const item = requests.find(r => r.id === id);
-  if (item) {
-    const conflictIds = getConflictIds(requests.filter(request => request.date === item.date));
-    toast(`${item.id} · ${item.title} · ${item.engineer} · ${formatRange(item)}`, conflictIds.has(id) ? "warning" : "success");
-  }
+function openRequestAction(id) {
+  const item = requests.find(request => request.id === id);
+  if (!item) return;
+  activeRequestActionId = id;
+  const sameNight = requests.filter(request => request.date === item.date);
+  const hasConflict = getConflictIds(sameNight).has(item.id);
+  $("#requestActionSummary").innerHTML = `<div class="request-action-title"><span>${escapeHtml(item.id)}</span><span class="status-chip ${hasConflict ? "conflict" : "clear"}">${hasConflict ? "Conflict" : "Clear"}</span></div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.sector)} · ${formatRange(item)} · ${escapeHtml(item.engineer)} · ${escapeHtml(item.priority)} priority</p>`;
+  $("#requestActionModal").classList.remove("hidden");
+  setTimeout(() => $("#completeRequestBtn").focus(), 30);
+}
+
+function closeRequestAction() {
+  $("#requestActionModal").classList.add("hidden");
+  activeRequestActionId = null;
+}
+
+function removeRequest(id, outcome) {
+  const item = requests.find(request => request.id === id);
+  if (!item) return;
+  const isCompleted = outcome === "completed";
+  const prompt = isCompleted
+    ? `Mark ${item.id} as completed and remove it from the active schedule?`
+    : `Cancel ${item.id} and remove it from the active schedule?`;
+  if (!window.confirm(prompt)) return;
+
+  requests = requests.filter(request => request.id !== item.id);
+  persistState();
+  closeRequestAction();
+  renderAll();
+  toast(`${item.id} ${isCompleted ? "marked as done" : "cancelled"} and removed from the active schedule.`, isCompleted ? "success" : "warning");
 }
 
 function toast(message, type = "success") {
@@ -799,6 +827,11 @@ $("#closeModalBtn").addEventListener("click", closeModal);
 $("#cancelModalBtn").addEventListener("click", closeModal);
 $("#requestForm").addEventListener("submit", addRequest);
 $("#requestModal").addEventListener("click", event => { if (event.target === $("#requestModal")) closeModal(); });
+$("#closeRequestActionBtn").addEventListener("click", closeRequestAction);
+$("#keepRequestBtn").addEventListener("click", closeRequestAction);
+$("#completeRequestBtn").addEventListener("click", () => { if (activeRequestActionId) removeRequest(activeRequestActionId, "completed"); });
+$("#cancelRequestBtn").addEventListener("click", () => { if (activeRequestActionId) removeRequest(activeRequestActionId, "cancelled"); });
+$("#requestActionModal").addEventListener("click", event => { if (event.target === $("#requestActionModal")) closeRequestAction(); });
 $("#closeManualBtn").addEventListener("click", closeManualReview);
 $("#cancelManualBtn").addEventListener("click", closeManualReview);
 $("#manualTargetSelect").addEventListener("change", updateManualReviewFields);
@@ -815,7 +848,7 @@ $("#staffModal").addEventListener("click", event => { if (event.target === $("#s
 $("#staffSpecialisationFilter").addEventListener("change", renderStaffPage);
 $("#exportBtn").addEventListener("click", exportPlan);
 $(".mobile-menu").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
-document.addEventListener("keydown", event => { if (event.key === "Escape") { closeModal(); closeManualReview(); closeStaffModal(); } });
+document.addEventListener("keydown", event => { if (event.key === "Escape") { closeModal(); closeManualReview(); closeStaffModal(); closeRequestAction(); } });
 
 $$("[data-view]").forEach(button => button.addEventListener("click", () => {
   view = button.dataset.view;
