@@ -128,7 +128,7 @@
 
               <div class="request-table-wrap hidden" id="listView">
                 <table>
-                  <thead><tr><th>Request</th><th>Sector</th><th>Time</th><th>Lead engineer</th><th>Priority</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Request</th><th>Sector</th><th>Time</th><th>Lead engineer</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody id="requestTableBody"></tbody>
                 </table>
               </div>
@@ -281,6 +281,24 @@
           <div class="manual-validation hidden" id="staffValidation" role="alert"></div>
           <div class="modal-actions"><button class="button secondary" id="cancelStaffModalBtn" type="button">Cancel</button><button class="button primary" type="submit">Save staff member</button></div>
         </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="requestActionModal" role="presentation">
+      <section class="modal request-action-modal" role="dialog" aria-modal="true" aria-labelledby="requestActionTitle">
+        <div class="modal-head">
+          <div><p class="section-label">Request management</p><h2 id="requestActionTitle">Update maintenance request</h2><p>Remove a finished or cancelled job from the active schedule.</p></div>
+          <button class="close-button" id="closeRequestActionBtn" type="button" aria-label="Close request actions">×</button>
+        </div>
+        <div class="request-action-content">
+          <div class="request-action-summary" id="requestActionSummary"></div>
+          <div class="request-action-note"><strong>This updates the active plan immediately.</strong><span>The request will disappear from the dashboard, conflict queue and weekly calendar.</span></div>
+          <div class="request-action-buttons">
+            <button class="button secondary" id="keepRequestBtn" type="button">Keep request</button>
+            <button class="button cancel-request-button" id="cancelRequestBtn" type="button">Cancel request</button>
+            <button class="button complete-request-button" id="completeRequestBtn" type="button">✓ Mark job done</button>
+          </div>
+        </div>
       </section>
     </div>
 
